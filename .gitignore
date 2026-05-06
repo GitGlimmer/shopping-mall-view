@@ -39,6 +39,8 @@ jspm_packages/
 
 # dotenv environment variables file
 .env
+.env.local
+.env.*.local
 .env.test
 .env.production
 
@@ -51,15 +53,21 @@ jspm_packages/
 .project
 .classpath
 .settings/
+*.swp
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Build output
 dist/
 dist-ssr/
 *.local
+build/
+.output/
 
 # Editor directories and files
 *.swp
@@ -80,4 +88,24 @@ dist-ssr/
 
 # TernJS port file
 .tern-port
-```
+
+# Vue / Vite
+.vite/
+*.manifest.json
+
+# TypeScript
+*.tsbuildinfo
+*.tsinfo
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Cache
+.cache/
+*.cache
+
+# Misc
+*.tmp
+*.bak
+*.backup
