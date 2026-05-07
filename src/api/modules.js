@@ -50,4 +50,5 @@ export const analyticsApi = {
   salesTrendData: (period, days) => request.get(`/analytics/salesTrend?period=${period}&days=${days}`),
   realtime: () => request.get("/analytics/realtime"),
   alerts: () => request.get("/analytics/alerts"),
+  categorySales: () => request.get("/analytics/sales/category"),
 };

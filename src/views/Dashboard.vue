@@ -244,18 +244,37 @@
           </div>
         </div>
 
-        <div class="mini-card">
+        <div class="mini-card category-sales-card">
           <div class="mini-header">
             <h4>分类销售占比</h4>
           </div>
-          <div class="category-chart">
-            <div v-for="cat in categoryStats" :key="cat.name" class="category-item">
-              <span class="cat-name">{{ cat.name }}</span>
-              <div class="cat-bar-wrapper">
-                <div class="cat-bar" :style="{ width: cat.percent + '%', background: cat.color }"></div>
-              </div>
-              <span class="cat-percent">{{ cat.percent }}%</span>
+          <div class="category-sales-content" v-if="hasCategoryData">
+            <div class="pie-chart-wrapper">
+              <svg viewBox="0 0 100 100" class="pie-chart">
+                <path
+                  v-for="(slice, index) in pieSlices"
+                  :key="index"
+                  :d="slice.path"
+                  :fill="slice.color"
+                  stroke="#ffffff"
+                  stroke-width="1"
+                  class="pie-slice"
+                />
+              </svg>
             </div>
+            <div class="category-chart">
+              <div v-for="cat in categoryStats" :key="cat.name" class="category-item">
+                <span class="cat-color" :style="{ background: cat.color }"></span>
+                <span class="cat-name">{{ cat.name }}</span>
+                <div class="cat-bar-wrapper">
+                  <div class="cat-bar" :style="{ width: cat.percent + '%', background: cat.color }"></div>
+                </div>
+                <span class="cat-percent">{{ cat.percent }}%</span>
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty-category">
+            暂无数据
           </div>
         </div>
 
@@ -323,6 +342,10 @@ const categoryStats = ref([])
 const alerts = ref([])
 const currentAlertTab = ref(1)
 
+const hasCategoryData = computed(() => {
+  return categoryStats.value.length > 0 && !categoryStats.value.some(item => item.name === '暂无数据')
+})
+
 const periodTabs = [
   { label: '每日', value: 'daily' },
   { label: '每月', value: 'monthly' },
@@ -389,6 +412,43 @@ const getBarWidth = (sales) => {
   const maxSales = Math.max(...hotProducts.value.map(p => p.sales || 1))
   return (sales / maxSales) * 100
 }
+
+const pieSlices = computed(() => {
+  const slices = []
+  let currentAngle = 0
+  const centerX = 50
+  const centerY = 50
+  const outerRadius = 40
+  
+  categoryStats.value.forEach((cat) => {
+    const percent = cat.percent || 0
+    const angle = (percent / 100) * 360
+    const startAngle = currentAngle
+    const endAngle = currentAngle + angle
+    
+    const startRad = ((startAngle - 90) * Math.PI) / 180
+    const endRad = ((endAngle - 90) * Math.PI) / 180
+    
+    const x1 = centerX + outerRadius * Math.cos(startRad)
+    const y1 = centerY + outerRadius * Math.sin(startRad)
+    const x2 = centerX + outerRadius * Math.cos(endRad)
+    const y2 = centerY + outerRadius * Math.sin(endRad)
+    
+    const largeArcFlag = angle > 180 ? 1 : 0
+    
+    const path = `M ${centerX} ${centerY} L ${x1} ${y1} A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`
+    
+    slices.push({
+      color: cat.color,
+      path: path,
+      percent: percent
+    })
+    
+    currentAngle = endAngle
+  })
+  
+  return slices
+})
 
 const currentAlertItems = computed(() => {
   const alert = alerts.value.find(a => a.id === currentAlertTab.value)
@@ -482,14 +542,27 @@ const loadRealtimeData = async () => {
 }
 
 const loadCategoryStats = async () => {
-  const categories = [
-    { name: '电子产品', percent: 35, color: '#667eea' },
-    { name: '服装鞋帽', percent: 25, color: '#f5576c' },
-    { name: '食品饮料', percent: 20, color: '#43e97b' },
-    { name: '家居用品', percent: 12, color: '#4facfe' },
-    { name: '其他', percent: 8, color: '#969799' },
-  ]
-  categoryStats.value = categories
+  const colors = ['#667eea', '#f5576c', '#43e97b', '#4facfe', '#969799', '#ffa726', '#ab47bc', '#ec407a']
+  
+  try {
+    const result = await analyticsApi.categorySales()
+    if (result.code === 200 && result.data && result.data.length > 0) {
+      categoryStats.value = result.data.map((item, index) => ({
+        name: item.category || '未分类',
+        percent: Math.round(item.ratio || 0),
+        color: colors[index % colors.length]
+      }))
+    } else {
+      categoryStats.value = [
+        { name: '暂无数据', percent: 100, color: '#969799' }
+      ]
+    }
+  } catch (error) {
+    console.error('加载分类销售统计失败:', error)
+    categoryStats.value = [
+      { name: '暂无数据', percent: 100, color: '#969799' }
+    ]
+  }
 }
 
 const loadAlerts = async () => {
@@ -1101,22 +1174,92 @@ onUnmounted(() => {
   color: #1f2937;
 }
 
-.category-chart {
+.category-sales-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  min-height: 180px;
+}
+
+.empty-category {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.category-sales-content {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.pie-chart-wrapper {
+  flex-shrink: 0;
+}
+
+.pie-chart {
+  width: 100px;
+  height: 100px;
+}
+
+.pie-slice {
+  transition: opacity 0.2s;
+  cursor: pointer;
+}
+
+.pie-slice:hover {
+  opacity: 0.8;
+}
+
+.category-chart {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 150px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db #f3f4f6;
+  padding-right: 4px;
+}
+
+.category-chart::-webkit-scrollbar {
+  width: 4px;
+}
+
+.category-chart::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 2px;
+}
+
+.category-chart::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 2px;
 }
 
 .category-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+}
+
+.cat-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .cat-name {
-  width: 80px;
-  font-size: 13px;
+  width: 70px;
+  font-size: 12px;
   color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
 .cat-bar-wrapper {
@@ -1139,6 +1282,7 @@ onUnmounted(() => {
   font-weight: 600;
   color: #1f2937;
   text-align: right;
+  flex-shrink: 0;
 }
 
 .realtime-grid {
