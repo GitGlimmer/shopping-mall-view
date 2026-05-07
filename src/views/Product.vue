@@ -129,6 +129,23 @@
           :index="(index) => (currentPage - 1) * pageSize + index + 1"
         />
         <el-table-column 
+          label="商品图片" 
+          width="80"
+          align="center"
+        >
+          <template #default="scope">
+            <div class="product-image-cell">
+              <img 
+                v-if="scope.row.imageUrl" 
+                :src="scope.row.imageUrl" 
+                class="product-thumbnail"
+                @click="previewImage(scope.row.imageUrl)"
+              />
+              <span v-else class="no-image">无图片</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column 
           prop="name" 
           label="商品名称" 
           sortable="custom"
@@ -289,18 +306,34 @@
         <el-form-item label="商品描述" prop="description">
           <el-input v-model="form.description" type="textarea" rows="3" />
         </el-form-item>
-        <el-form-item label="图片上传">
-          <el-upload
-            class="upload-demo"
-            action="/api/product/manage/upload"
-            :on-success="handleImageUpload"
-            :before-upload="beforeImageUpload"
-            :file-list="imageFileList"
-            accept="image/*"
-          >
-            <el-button size="small" type="primary">点击上传</el-button>
-          </el-upload>
-          <el-input v-model="form.imageUrl" placeholder="图片URL" style="margin-top: 10px" />
+        <el-form-item label="商品图片">
+          <div class="image-upload-container">
+            <div class="image-preview-area">
+              <div v-if="form.imageUrl" class="image-preview-wrapper">
+                <img :src="form.imageUrl" class="preview-image" @click="previewImage(form.imageUrl)" />
+                <div class="image-actions">
+                  <el-button size="mini" type="text" @click="handleImageUploadClick">修改图片</el-button>
+                  <el-button size="mini" type="text" @click="clearImage">删除图片</el-button>
+                </div>
+              </div>
+              <div v-else class="image-upload-placeholder" @click="handleImageUploadClick">
+                <span class="upload-icon">📷</span>
+                <span class="upload-text">点击上传商品图片</span>
+              </div>
+            </div>
+            <el-upload
+              ref="imageUploadRef"
+              class="image-upload-hidden"
+              action="/api/product/manage/upload"
+              :on-success="handleImageUpload"
+              :before-upload="beforeImageUpload"
+              :auto-upload="true"
+              accept="image/*"
+            >
+              <el-button size="small" type="primary">选择图片</el-button>
+            </el-upload>
+            <el-input v-model="form.imageUrl" placeholder="图片URL" style="margin-top: 10px; display: none" />
+          </div>
         </el-form-item>
         <el-form-item label="商品规格" prop="specifications">
           <el-input v-model="form.specifications" placeholder="请输入规格" />
@@ -325,6 +358,18 @@
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit">确定</el-button>
       </template>
+    </el-dialog>
+
+    <el-dialog 
+      v-model="showImagePreview" 
+      title="图片预览" 
+      width="600px"
+      :close-on-click-modal="true"
+      @close="closeImagePreview"
+    >
+      <div class="image-preview-modal">
+        <img :src="previewImageUrl" class="preview-modal-image" />
+      </div>
     </el-dialog>
 
     <el-dialog v-model="batchUploadVisible" title="批量导入商品" width="500px">
@@ -375,6 +420,9 @@ const batchUploadRef = ref(null);
 
 const imageFileList = ref([]);
 const batchFileList = ref([]);
+const imageUploadRef = ref(null);
+const previewImageUrl = ref('');
+const showImagePreview = ref(false);
 
 const form = ref({
   id: "",
@@ -816,6 +864,29 @@ const handleImageUpload = (response) => {
   }
 };
 
+const handleImageUploadClick = () => {
+  if (imageUploadRef.value) {
+    const uploadInput = imageUploadRef.value.$refs.input;
+    if (uploadInput) {
+      uploadInput.click();
+    }
+  }
+};
+
+const clearImage = () => {
+  form.value.imageUrl = '';
+  imageFileList.value = [];
+};
+
+const previewImage = (url) => {
+  previewImageUrl.value = url;
+  showImagePreview.value = true;
+};
+
+const closeImagePreview = () => {
+  showImagePreview.value = false;
+};
+
 const beforeImageUpload = (file) => {
   const isImage = file.type.startsWith("image/");
   if (!isImage) {
@@ -1195,6 +1266,133 @@ loadProducts();
   overflow: hidden;
   text-overflow: clip;
   white-space: nowrap;
+}
+
+.product-image-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.product-thumbnail {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid #e4e7ed;
+  transition: all 0.2s ease;
+}
+
+.product-thumbnail:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.no-image {
+  font-size: 12px;
+  color: #909399;
+  background-color: #f5f7fa;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.image-upload-container {
+  width: 100%;
+}
+
+.image-preview-area {
+  width: 200px;
+  height: 200px;
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background-color: #fafafa;
+}
+
+.image-preview-area:hover {
+  border-color: #409EFF;
+  background-color: #f0f5ff;
+}
+
+.image-upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #909399;
+}
+
+.upload-icon {
+  font-size: 36px;
+}
+
+.upload-text {
+  font-size: 13px;
+}
+
+.image-preview-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.preview-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.image-actions {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent);
+  padding: 20px 10px 10px;
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.image-preview-wrapper:hover .image-actions {
+  opacity: 1;
+}
+
+.image-actions .el-button {
+  color: white;
+  font-size: 12px;
+}
+
+.image-actions .el-button:hover {
+  color: #409EFF;
+}
+
+.image-upload-hidden {
+  display: none;
+}
+
+.image-preview-modal {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.preview-modal-image {
+  max-width: 100%;
+  max-height: 500px;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 :deep(.el-table .el-table__body .el-table__row td) {
