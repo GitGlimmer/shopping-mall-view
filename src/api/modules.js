@@ -8,6 +8,8 @@ export const productManageApi = {
   detail: (data) => request.post("/product/manage/detail", data),
   updateStatus: (data) => request.post("/product/manage/status", data),
   batchStatus: (data) => request.post("/product/manage/batch/status", data),
+  getBrands: () => request.get("/product/manage/brands"),
+  getCategories: () => request.get("/product/manage/categories"),
 };
 
 export const brandApi = {

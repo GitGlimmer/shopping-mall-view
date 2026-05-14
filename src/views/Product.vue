@@ -129,19 +129,27 @@
           :index="(index) => (currentPage - 1) * pageSize + index + 1"
         />
         <el-table-column 
-          label="商品图片" 
-          width="80"
+          width="90"
           align="center"
         >
+          <template #header>
+            <span class="header-cell-inline">商品图</span>
+          </template>
           <template #default="scope">
             <div class="product-image-cell">
-              <img 
+              <div 
                 v-if="scope.row.imageUrl" 
-                :src="scope.row.imageUrl" 
-                class="product-thumbnail"
+                class="image-placeholder"
                 @click="previewImage(scope.row.imageUrl)"
-              />
-              <span v-else class="no-image">无图片</span>
+              >
+                <img 
+                  :src="scope.row.imageUrl" 
+                  class="product-thumbnail"
+                />
+              </div>
+              <div v-else class="image-placeholder no-image-wrapper">
+                <span class="no-image-text">暂无图片</span>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -370,28 +378,63 @@
       <div class="image-preview-modal">
         <img :src="previewImageUrl" class="preview-modal-image" />
       </div>
+      <template #footer>
+        <el-button @click="closeImagePreview">关闭</el-button>
+        <el-button type="primary" @click="handleImageUploadClick">修改图片</el-button>
+        <el-button type="danger" @click="confirmDeleteImage">删除图片</el-button>
+      </template>
     </el-dialog>
 
-    <el-dialog v-model="batchUploadVisible" title="批量导入商品" width="500px">
-      <el-form>
-        <el-form-item label="导入文件">
-          <el-upload
-            class="upload-demo"
-            action="/api/product/manage/batch/upload"
-            :on-success="handleBatchUploadSuccess"
-            :before-upload="beforeBatchUpload"
-            :file-list="batchFileList"
-            accept=".xlsx,.xls"
-            :auto-upload="false"
-            ref="batchUploadRef"
-          >
-            <el-button size="small" type="primary">选择文件</el-button>
-          </el-upload>
-        </el-form-item>
-        <el-form-item>
-          <el-link type="primary" @click="downloadTemplate">下载导入模板</el-link>
-        </el-form-item>
-      </el-form>
+    <el-dialog v-model="batchUploadVisible" title="批量导入商品" width="500px" :close-on-click-modal="false">
+      <div class="batch-upload-container">
+        <div class="import-tips">
+          <p><strong>注意事项：</strong></p>
+          <ul>
+            <li>1. 请填写完整的商品信息，分类和品牌必须存在于系统中</li>
+            <li>2. 分类/品牌可填写名称或ID</li>
+            <li>3. 状态：0=禁用，1=启用</li>
+          </ul>
+        </div>
+        
+        <el-upload
+          class="batch-upload-area"
+          action="/api/product/manage/batch/upload"
+          :on-success="handleBatchUploadSuccess"
+          :before-upload="beforeBatchUpload"
+          :file-list="batchFileList"
+          accept=".xlsx,.xls"
+          :auto-upload="false"
+          ref="batchUploadRef"
+          drag
+        >
+          <div class="upload-icon-wrapper">
+            <el-icon class="upload-icon" size="60"><Upload /></el-icon>
+          </div>
+          <div class="upload-text">点击上传，或将文件拖拽到此处</div>
+        </el-upload>
+        
+        <div class="upload-actions">
+          <el-button type="primary" class="download-btn" @click="downloadTemplate" :disabled="downloadLoading">下载商品模版</el-button>
+          <el-button class="download-btn" @click="downloadBrandList" :disabled="downloadLoading">下载品牌列表</el-button>
+          <el-button class="download-btn" @click="downloadCategoryList" :disabled="downloadLoading">下载分类列表</el-button>
+        </div>
+        
+        <div v-if="importResult" class="import-result">
+          <el-divider />
+          <div class="result-summary">
+            <span class="success-count">成功：{{ importResult.successCount }} 条</span>
+            <span class="fail-count">失败：{{ importResult.failCount }} 条</span>
+          </div>
+          <div v-if="importResult.failItems && importResult.failItems.length > 0" class="fail-list">
+            <div class="result-title">失败详情：</div>
+            <el-scrollbar height="150px">
+              <div v-for="(item, index) in importResult.failItems" :key="index" class="fail-item">
+                {{ item }}
+              </div>
+            </el-scrollbar>
+          </div>
+        </div>
+      </div>
       <template #footer>
         <el-button @click="batchUploadVisible = false">取消</el-button>
         <el-button type="primary" @click="submitBatchUpload">确定导入</el-button>
@@ -403,6 +446,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { Upload } from "@element-plus/icons-vue";
 import { productManageApi, brandApi, categoryApi } from "../api/modules";
 
 const products = ref([]);
@@ -423,6 +467,12 @@ const batchFileList = ref([]);
 const imageUploadRef = ref(null);
 const previewImageUrl = ref('');
 const showImagePreview = ref(false);
+
+const brands = ref([]);
+const categories = ref([]);
+const batchForm = reactive({});
+const importResult = ref(null);
+const downloadLoading = ref(false);
 
 const form = ref({
   id: "",
@@ -818,16 +868,44 @@ const handleBatchOffSale = async () => {
   }
 };
 
-const handleBatchUpload = () => {
+const handleBatchUpload = async () => {
+  await loadBatchBrands();
+  await loadBatchCategories();
+  importResult.value = null;
+  batchForm.brandName = '';
+  batchForm.categoryName = '';
   batchUploadVisible.value = true;
+};
+
+const loadBatchBrands = async () => {
+  try {
+    const result = await productManageApi.getBrands();
+    if (result.code === 200) {
+      brands.value = result.data || [];
+    }
+  } catch (e) {
+    console.error("加载品牌失败:", e);
+  }
+};
+
+const loadBatchCategories = async () => {
+  try {
+    const result = await productManageApi.getCategories();
+    if (result.code === 200) {
+      categories.value = result.data || [];
+    }
+  } catch (e) {
+    console.error("加载分类失败:", e);
+  }
 };
 
 const handleBatchUploadSuccess = (response) => {
   if (response.code === 200) {
-    ElMessage.success(`成功导入 ${response.data} 件商品`);
-    batchUploadVisible.value = false;
-    batchFileList.value = [];
-    loadProducts();
+    importResult.value = response.data;
+    ElMessage.success(`导入完成，成功 ${response.data.successCount} 条，失败 ${response.data.failCount} 条`);
+    if (response.data.successCount > 0) {
+      loadProducts();
+    }
   } else {
     ElMessage.error(response.message || "导入失败");
   }
@@ -845,14 +923,70 @@ const beforeBatchUpload = (file) => {
 
 const submitBatchUpload = () => {
   if (batchUploadRef.value && batchFileList.value.length > 0) {
+    const action = `/api/product/manage/batch/upload`;
+    batchUploadRef.value.$el.querySelector('form').action = action;
     batchUploadRef.value.submit();
   } else {
     ElMessage.warning("请选择要导入的文件");
   }
 };
 
-const downloadTemplate = () => {
-  window.location.href = "/api/product/manage/template/download";
+const downloadFile = async (url, filename) => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error('下载失败');
+    }
+    const blob = await response.blob();
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.download = filename || url.split('/').pop();
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(link.href);
+  } catch (error) {
+    ElMessage.error(error.message || '下载失败');
+  }
+};
+
+const downloadTemplate = (event) => {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  if (downloadLoading.value) return;
+  downloadLoading.value = true;
+  downloadFile("/api/product/manage/template/download", '批量添加商品模版.xlsx');
+  setTimeout(() => {
+    downloadLoading.value = false;
+  }, 2000);
+};
+
+const downloadBrandList = (event) => {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  if (downloadLoading.value) return;
+  downloadLoading.value = true;
+  downloadFile("/api/product/manage/brands/download", '品牌列表.xlsx');
+  setTimeout(() => {
+    downloadLoading.value = false;
+  }, 2000);
+};
+
+const downloadCategoryList = (event) => {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  if (downloadLoading.value) return;
+  downloadLoading.value = true;
+  downloadFile("/api/product/manage/categories/download", '分类列表.xlsx');
+  setTimeout(() => {
+    downloadLoading.value = false;
+  }, 2000);
 };
 
 const handleImageUpload = (response) => {
@@ -885,6 +1019,21 @@ const previewImage = (url) => {
 
 const closeImagePreview = () => {
   showImagePreview.value = false;
+};
+
+const confirmDeleteImage = async () => {
+  try {
+    await ElMessageBox.confirm("确定要删除这张图片吗？", "提示", {
+      type: "warning",
+    });
+    clearImage();
+    closeImagePreview();
+    ElMessage.success("图片删除成功");
+  } catch (e) {
+    if (e !== "cancel") {
+      ElMessage.error("删除失败");
+    }
+  }
 };
 
 const beforeImageUpload = (file) => {
@@ -1274,27 +1423,60 @@ loadProducts();
   justify-content: center;
 }
 
-.product-thumbnail {
-  width: 50px;
-  height: 50px;
-  object-fit: cover;
-  border-radius: 4px;
+.image-placeholder {
+  width: 42px;
+  height: 28px;
+  border-radius: 3px;
+  border: 1px dashed #d9d9d9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  border: 1px solid #e4e7ed;
+  background-color: #fafafa;
   transition: all 0.2s ease;
 }
 
-.product-thumbnail:hover {
-  transform: scale(1.1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+.image-placeholder:hover {
+  border-color: #409EFF;
+  background-color: #f0f5ff;
 }
 
-.no-image {
-  font-size: 12px;
-  color: #909399;
-  background-color: #f5f7fa;
-  padding: 4px 8px;
+.product-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   border-radius: 4px;
+}
+
+.no-image-wrapper {
+  cursor: default;
+}
+
+.no-image-wrapper:hover {
+  border-color: #d9d9d9;
+  background-color: #fafafa;
+}
+
+.no-image-text {
+  font-size: 10px;
+  color: #909399;
+  text-align: center;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.header-cell {
+  white-space: nowrap;
+  word-break: keep-all;
+  font-size: 13px;
+}
+
+.header-cell-inline {
+  display: inline-block;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  font-size: 13px;
+  line-height: 1;
 }
 
 .image-upload-container {
@@ -1333,6 +1515,99 @@ loadProducts();
 
 .upload-text {
   font-size: 13px;
+}
+
+.batch-upload-container {
+  padding: 20px;
+}
+
+.batch-upload-area {
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  padding: 40px 20px;
+  text-align: center;
+  transition: all 0.3s ease;
+  background-color: #fafafa;
+  
+  &:hover {
+    border-color: #409EFF;
+    background-color: #f0f5ff;
+  }
+  
+  &.is-dragover {
+    border-color: #409EFF;
+    background-color: #e6f7ff;
+  }
+}
+
+.upload-icon-wrapper {
+  margin-bottom: 16px;
+  
+  .upload-icon {
+    font-size: 60px;
+    color: #52c41a;
+  }
+}
+
+.upload-actions {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e8e8e8;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.download-btn {
+  width: 140px;
+  height: 40px;
+  font-size: 14px;
+  background-color: #1890ff;
+  border-color: #1890ff;
+  border-radius: 20px;
+  color: #fff !important;
+}
+
+.form-tip {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 8px;
+}
+
+.import-result {
+  margin-top: 16px;
+}
+
+.result-summary {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 12px;
+}
+
+.success-count {
+  color: #67c23a;
+  font-weight: 500;
+}
+
+.fail-count {
+  color: #f56c6c;
+  font-weight: 500;
+}
+
+.result-title {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.fail-list {
+  font-size: 12px;
+  color: #606266;
+}
+
+.fail-item {
+  padding: 4px 0;
+  border-bottom: 1px solid #f2f6fc;
 }
 
 .image-preview-wrapper {
@@ -1401,6 +1676,15 @@ loadProducts();
 
 :deep(.el-table .el-table__header th) {
   padding: 14px 8px;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+:deep(.el-table .el-table__header th .cell) {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 </style>
